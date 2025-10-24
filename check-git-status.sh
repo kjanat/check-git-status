@@ -22,7 +22,7 @@ fi
 
 # If any arg is --version or -v, show version
 if printf '%s\n' "$@" | grep -qx -- '-v\|--version'; then
-	echo "check-git-status.sh 1.1.2" >&2
+	echo "check-git-status.sh 1.2.0" >&2
 	exit 0
 fi
 
@@ -38,28 +38,44 @@ fi
 printf "🔍 Checking git repos in %s (maxdepth=%s)\n" "$ROOT" "$MAXDEPTH" >&2
 printf '%*s\n\n' "$(tput cols)" '' | tr ' ' '━' >&2
 
+# OPTIMIZATION: Single find + parallel processing + single git status per repo
+# Output format: STATUS<TAB>PATH<TAB>GIT_OUTPUT (NUL-terminated for safety)
 find "$ROOT" -maxdepth "$MAXDEPTH" -type d -name .git -print0 |
 	xargs -0 -n1 dirname |
-	tee >(
-		awk 'END{print "📦 Total repos: " NR}' >&2
-	) |
-	xargs -I{} sh -c '
-    if test -n "$(git -C "$1" status --porcelain 2>/dev/null)"; then
-      printf "📦 %s\n" "$(basename "$1")" >&2
-      git -C "$1" status --short 2>/dev/null | sed "s/^/  /" >&2
-      echo >&2
-      echo "$1"
+	xargs -P"$(nproc)" -I{} sh -c '
+    status=$(git -C "$1" status --porcelain 2>/dev/null || true)
+    if [ -n "$status" ]; then
+      printf "DIRTY\t%s\t%s\0" "$1" "$status"
+    else
+      printf "CLEAN\t%s\0" "$1"
     fi
   ' _ {} |
-	tee >(
-		awk 'END{print "📊 Dirty repos: " NR}' >&2
-	) >/dev/null
+	awk -v RS='\0' -F'\t' '
+    BEGIN { total=0; dirty=0; ORS="" }
 
-exit "$(
-	find "$ROOT" -maxdepth "$MAXDEPTH" -type d -name .git -print0 |
-		xargs -0 -n1 dirname |
-		xargs -I{} sh -c '
-      test -n "$(git -C "$1" status --porcelain 2>/dev/null)" && echo .
-    ' _ {} |
-		awk 'END{n=NR+0; if(n>255)n=255; print n}'
-)"
+    # Process each record
+    {
+      total++
+      if ($1 == "DIRTY") {
+        dirty++
+        # Display dirty repo
+        repo_name = $2
+        sub(/.*\//, "", repo_name)
+        printf "📦 %s\n", repo_name > "/dev/stderr"
+
+        # Display git status lines
+        git_output = $3
+        gsub(/\n/, "\n  ", git_output)
+        printf "  %s\n\n", git_output > "/dev/stderr"
+      }
+    }
+
+    END {
+      printf "📦 Total repos: %d\n", total > "/dev/stderr"
+      printf "📊 Dirty repos: %d\n", dirty > "/dev/stderr"
+
+      # Exit with dirty count (capped at 255)
+      exit_code = dirty > 255 ? 255 : dirty
+      exit exit_code
+    }
+  '
