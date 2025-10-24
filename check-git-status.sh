@@ -1,122 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pure Functional Git Status Checker
-# Constraints: NO loops, NO mutable vars, ONLY recursion + pipes
+_DEFAULT_MAX_DEPTH=3
+_DEFAULT_ROOT="$HOME/projects"
 
-# ============================================================
-# PURE FUNCTIONS (no side effects except I/O)
-# ============================================================
+# If any arg is --help or -h, show help immediately
+if printf '%s\n' "$@" | grep -qx -- '-h\|--help'; then
+	cat >&2 <<EOF
+Usage: check-git-status.sh [path] [maxdepth]
 
-# Pure: check if dir is git repo
-is_git_repo() {
-	[[ -d "$1/.git" ]]
-}
+  path        Root directory to search (default: $_DEFAULT_ROOT)
+  maxdepth    Maximum directory depth (default: $_DEFAULT_MAX_DEPTH)
 
-# Pure: check if repo is dirty (returns 0=dirty, 1=clean)
-is_dirty() {
-	is_git_repo "$1" &&
-		(cd "$1" && [[ -n "$(git status --porcelain 2>/dev/null)" ]])
-}
+Examples:
+  check-git-status.sh
+  check-git-status.sh ~/dev 2
+  check-git-status.sh --help  # works anywhere
+EOF
+	exit 0
+fi
 
-# Pure: get git status for dir
-get_status() {
-	(cd "$1" && git status --short 2>/dev/null)
-}
+# If any arg is --version or -v, show version
+if printf '%s\n' "$@" | grep -qx -- '-v\|--version'; then
+	echo "check-git-status.sh 1.1.2" >&2
+	exit 0
+fi
 
-# ============================================================
-# RECURSIVE LIST PROCESSORS (tail recursion)
-# ============================================================
+ROOT="${1:-$_DEFAULT_ROOT}"
+MAXDEPTH="${2:-$_DEFAULT_MAX_DEPTH}"
 
-# Recursive: process lines from stdin, check each repo
-# Base case: no more input → done
-# Recursive case: read one line, process it, recurse on rest
-recursive_check() {
-	local line
-	if read -r line; then
-		# Process head
-		if is_git_repo "$line"; then
-			echo "$line"
-		fi
-		# Recurse on tail
-		recursive_check
-	fi
-}
+# Validate numeric
+if ! [[ "$MAXDEPTH" =~ ^[0-9]+$ ]]; then
+	printf "❌ Invalid maxdepth: %s (must be a positive integer)\n" "$MAXDEPTH" >&2
+	exit 1
+fi
 
-# Recursive: filter dirty repos only
-# Accumulates dirty repos through recursion
-recursive_filter_dirty() {
-	local line
-	if read -r line; then
-		# Process head: check if dirty
-		is_dirty "$line" && echo "$line"
-		# Recurse on tail
-		recursive_filter_dirty
-	fi
-}
+printf "🔍 Checking git repos in %s (maxdepth=%s)\n" "$ROOT" "$MAXDEPTH" >&2
+printf '%*s\n\n' "$(tput cols)" '' | tr ' ' '━' >&2
 
-# Recursive: display repo status
-# Pure display function with recursion
-recursive_display() {
-	local dir
-	if read -r dir; then
-		# Display head
-		echo "📦 $(basename "$dir")" >&2
-		get_status "$dir" | sed 's/^/  /' >&2
-		echo "" >&2
-		# Recurse on tail
-		recursive_display
-	fi
-}
+find "$ROOT" -maxdepth "$MAXDEPTH" -type d -name .git -print0 |
+	xargs -0 -n1 dirname |
+	tee >(
+		awk 'END{print "📦 Total repos: " NR}' >&2
+	) |
+	xargs -I{} sh -c '
+    if test -n "$(git -C "$1" status --porcelain 2>/dev/null)"; then
+      printf "📦 %s\n" "$(basename "$1")" >&2
+      git -C "$1" status --short 2>/dev/null | sed "s/^/  /" >&2
+      echo >&2
+      echo "$1"
+    fi
+  ' _ {} |
+	tee >(
+		awk 'END{print "📊 Dirty repos: " NR}' >&2
+	) >/dev/null
 
-# Recursive: count lines (accumulator pattern)
-# $1 = accumulator (current count)
-recursive_count() {
-	local acc="${1:-0}"
-	local line
-	if read -r line; then
-		# Recurse with incremented accumulator
-		recursive_count $((acc + 1))
-	else
-		# Base case: return accumulated count
-		echo "$acc"
-	fi
-}
-
-# ============================================================
-# MAIN PIPELINE (pure function composition)
-# ============================================================
-
-main() {
-	readonly PROJECTS_DIR="${HOME}/projects"
-
-	echo "🔍 Checking git repos in $PROJECTS_DIR" >&2
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
-	echo "" >&2
-
-	# Functional pipeline: find → transform → filter → process
-	# Step 1: Find all .git directories, get parent dirs
-	readonly all_repos=$(
-		find "$PROJECTS_DIR" -type d -name ".git" -maxdepth 3 |
-			xargs -n1 dirname |
-			recursive_check
-	)
-
-	# Step 2: Filter to dirty repos only (recursive filter)
-	readonly dirty_repos=$(echo "$all_repos" | recursive_filter_dirty)
-
-	# Step 3: Display dirty repos (recursive display)
-	echo "$dirty_repos" | recursive_display
-
-	# Step 4: Count results (recursive counting)
-	readonly total_count=$(echo "$all_repos" | recursive_count)
-	readonly dirty_count=$(echo "$dirty_repos" | recursive_count)
-
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
-	echo "📊 Summary: $dirty_count dirty / $total_count repos" >&2
-
-	# Return dirty count as exit code (capped at 255)
-	return $((dirty_count > 255 ? 255 : dirty_count))
-}
-
-main "$@"
+exit "$(
+	find "$ROOT" -maxdepth "$MAXDEPTH" -type d -name .git -print0 |
+		xargs -0 -n1 dirname |
+		xargs -I{} sh -c '
+      test -n "$(git -C "$1" status --porcelain 2>/dev/null)" && echo .
+    ' _ {} |
+		awk 'END{n=NR+0; if(n>255)n=255; print n}'
+)"
