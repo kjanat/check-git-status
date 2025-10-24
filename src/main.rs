@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rayon::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use walkdir::WalkDir;
 
@@ -47,10 +47,14 @@ impl Args {
         }
     }
 
-    fn root_path(&self) -> PathBuf {
-        self.root
-            .clone()
-            .unwrap_or_else(|| dirs::home_dir().unwrap().join("projects"))
+    fn root_path(&self) -> Result<PathBuf> {
+        match &self.root {
+            Some(path) => Ok(path.clone()),
+            None => {
+                let home = dirs::home_dir().context("Could not determine home directory")?;
+                Ok(home.join("projects"))
+            }
+        }
     }
 
     fn max_depth(&self) -> usize {
@@ -58,7 +62,7 @@ impl Args {
     }
 }
 
-fn find_git_repos(root: &PathBuf, max_depth: usize) -> Vec<PathBuf> {
+fn find_git_repos(root: &Path, max_depth: usize) -> Vec<PathBuf> {
     WalkDir::new(root)
         .max_depth(max_depth)
         .into_iter()
@@ -68,32 +72,35 @@ fn find_git_repos(root: &PathBuf, max_depth: usize) -> Vec<PathBuf> {
         .collect()
 }
 
-fn check_repo_status(repo_path: &PathBuf) -> Result<RepoStatus> {
+fn check_repo_status(repo_path: &Path) -> Result<RepoStatus> {
     let output = Command::new("git")
         .arg("-C")
         .arg(repo_path)
         .arg("status")
         .arg("--porcelain")
         .output()
-        .context("Failed to execute git status")?;
+        .with_context(|| format!("Failed to execute git status in {}", repo_path.display()))?;
 
-    let status_output = String::from_utf8_lossy(&output.stdout).to_string();
+    let status_output = String::from_utf8_lossy(&output.stdout);
 
     if status_output.trim().is_empty() {
         Ok(RepoStatus::Clean)
     } else {
-        Ok(RepoStatus::Dirty(repo_path.clone(), status_output))
+        Ok(RepoStatus::Dirty(
+            repo_path.to_path_buf(),
+            status_output.into_owned(),
+        ))
     }
 }
 
-fn get_repo_name(path: &PathBuf) -> String {
+fn get_repo_name(path: &Path) -> String {
     path.file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string()
 }
 
-fn print_verbose_status(path: &PathBuf, status: &str) {
+fn print_verbose_status(path: &Path, status: &str) {
     let repo_name = get_repo_name(path);
     eprintln!("📦 {}", repo_name);
 
@@ -110,7 +117,7 @@ fn print_summary(total: usize, dirty: usize) {
     eprintln!("📊 Dirty repos: {}", dirty);
 }
 
-fn print_header(root: &PathBuf, max_depth: usize) {
+fn print_header(root: &Path, max_depth: usize) {
     eprintln!(
         "🔍 Checking git repos in {} (maxdepth={})",
         root.display(),
@@ -129,7 +136,7 @@ fn terminal_width() -> usize {
 fn main() -> Result<()> {
     let args = Args::parse();
     let verbosity = args.verbosity();
-    let root = args.root_path();
+    let root = args.root_path()?;
     let max_depth = args.max_depth();
 
     if verbosity >= 2 {
@@ -139,7 +146,14 @@ fn main() -> Result<()> {
     let repos = find_git_repos(&root, max_depth);
     let statuses: Vec<RepoStatus> = repos
         .par_iter()
-        .filter_map(|repo| check_repo_status(repo).ok())
+        .filter_map(|repo| {
+            check_repo_status(repo)
+                .map_err(|e| {
+                    eprintln!("Warning: {:#}", e);
+                    e
+                })
+                .ok()
+        })
         .collect();
 
     let total = statuses.len();
@@ -161,11 +175,7 @@ fn main() -> Result<()> {
         print_summary(total, dirty_count);
     }
 
-    let exit_code = if dirty_count > 255 {
-        255
-    } else {
-        dirty_count
-    };
+    let exit_code = if dirty_count > 255 { 255 } else { dirty_count };
 
     std::process::exit(exit_code as i32);
 }
