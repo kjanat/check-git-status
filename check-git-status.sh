@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VERSION="1.3.1"
+SCRIPT_NAME="$(basename "$0")"
 _DEFAULT_MAX_DEPTH=3
 _DEFAULT_ROOT="$HOME/projects"
 VERBOSITY=1 # 0=quiet, 1=summary, 2=verbose
@@ -10,7 +12,7 @@ while [[ $# -gt 0 ]]; do
 	case "$1" in
 	-h | --help)
 		cat >&2 <<EOF
-Usage: check-git-status.sh [OPTIONS] [path] [maxdepth]
+Usage: $SCRIPT_NAME [OPTIONS] [path] [maxdepth]
 
 Options:
   -q, --quiet     Only exit code (0=all clean, N=dirty count)
@@ -23,15 +25,15 @@ Arguments:
   maxdepth        Maximum directory depth (default: $_DEFAULT_MAX_DEPTH)
 
 Examples:
-  check-git-status.sh              # summary only
-  check-git-status.sh -q           # silent, check exit code
-  check-git-status.sh -v           # verbose with details
-  check-git-status.sh ~/dev 2      # custom path/depth
+  $SCRIPT_NAME              # summary only
+  $SCRIPT_NAME -q           # silent, check exit code
+  $SCRIPT_NAME -v           # verbose with details
+  $SCRIPT_NAME ~/dev 2      # custom path/depth
 EOF
 		exit 0
 		;;
 	--version)
-		echo "check-git-status.sh 1.3.0" >&2
+		echo "$SCRIPT_NAME $VERSION" >&2
 		exit 0
 		;;
 	-q | --quiet)
