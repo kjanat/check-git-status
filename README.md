@@ -106,6 +106,44 @@ Uses parallel processing via Rayon for checking multiple repositories concurrent
 
 ## Development
 
+This project uses [Task](https://taskfile.dev) for build automation and development workflows.
+
+### Installing Task
+
+```bash
+# macOS/Linux via Homebrew
+brew install go-task
+
+# Linux via install script
+sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
+
+# Other installation methods: https://taskfile.dev/installation
+```
+
+### Available Tasks
+
+Run `task` or `task --list` to see all available tasks:
+
+```bash
+task default              # Show available tasks
+task install-hooks        # Install git pre-commit hooks
+task fmt                  # Check code formatting
+task fmt-fix (format)     # Fix code formatting
+task lint                 # Run clippy linter
+task check                # Check compilation
+task test                 # Run all tests
+task build                # Build release binary
+task dev                  # Build debug binary
+task ci                   # Run all CI checks
+task clean                # Clean build artifacts
+task watch                # Watch and rebuild on changes
+task completions          # Generate shell completions
+task install              # Install to ~/.local/bin
+task uninstall            # Uninstall from ~/.local/bin
+task run                  # Run the binary
+task help                 # Show binary help
+```
+
 ### Pre-commit Hooks
 
 This project includes a comprehensive pre-commit hook that runs quality checks before allowing commits. The hook automatically runs:
@@ -119,11 +157,11 @@ This project includes a comprehensive pre-commit hook that runs quality checks b
 #### Installing the Hook
 
 ```bash
-# Install git hooks for development
-./scripts/install-hooks.sh
+# Install git hooks using Task
+task install-hooks
 ```
 
-This will copy the pre-commit hook from `scripts/pre-commit.hook` to `.git/hooks/pre-commit`.
+This copies the pre-commit hook from `scripts/pre-commit.hook` to `.git/hooks/pre-commit`.
 
 #### Bypassing the Hook
 
@@ -163,5 +201,6 @@ If any check fails, the commit will be blocked with a helpful error message.
 ## Compatibility
 
 Requires:
-- Rust 1.70+ (2021 edition)
+- Rust 1.85+ (2024 edition)
 - Git installed and available in PATH
+- Task (optional, for development workflows)

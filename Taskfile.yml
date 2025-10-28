@@ -1,0 +1,112 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  BINARY_NAME: check-git-status
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  install-hooks:
+    desc: Install git pre-commit hooks
+    cmds:
+      - cp scripts/pre-commit.hook .git/hooks/pre-commit
+      - chmod +x .git/hooks/pre-commit
+      - echo "✓ Pre-commit hook installed successfully"
+    silent: true
+
+  fmt:
+    desc: Check code formatting
+    cmds:
+      - cargo fmt -- --check
+
+  fmt-fix:
+    desc: Fix code formatting
+    aliases: [format]
+    cmds:
+      - cargo fmt
+
+  lint:
+    desc: Run clippy linter
+    cmds:
+      - cargo clippy --all-targets --all-features -- -D warnings
+
+  check:
+    desc: Check compilation
+    cmds:
+      - cargo check --all-targets --all-features
+
+  test:
+    desc: Run all tests
+    deps: [build]
+    cmds:
+      - cargo test
+
+  build:
+    desc: Build release binary
+    cmds:
+      - cargo build --release
+
+  dev:
+    desc: Build debug binary
+    cmds:
+      - cargo build
+
+  ci:
+    desc: Run all CI checks (fmt, lint, check, test, build)
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: check
+      - task: test
+      - echo "✓ All CI checks passed!"
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - cargo clean
+
+  watch:
+    desc: Watch files and rebuild on changes
+    cmds:
+      - cargo watch -x build
+
+  completions:
+    desc: Generate shell completions
+    cmds:
+      - mkdir -p completions
+      - cargo run --release -- --generate-completion bash > completions/{{.BINARY_NAME}}.bash
+      - cargo run --release -- --generate-completion zsh > completions/_{{.BINARY_NAME}}
+      - cargo run --release -- --generate-completion fish > completions/{{.BINARY_NAME}}.fish
+      - echo "✓ Shell completions generated in completions/"
+
+  install:
+    desc: Install binary to ~/.local/bin
+    deps: [build]
+    cmds:
+      - mkdir -p ~/.local/bin
+      - cp target/release/{{.BINARY_NAME}} ~/.local/bin/
+      - echo "✓ Installed to ~/.local/bin/{{.BINARY_NAME}}"
+
+  uninstall:
+    desc: Uninstall binary from ~/.local/bin
+    cmds:
+      - rm -f ~/.local/bin/{{.BINARY_NAME}}
+      - echo "✓ Uninstalled from ~/.local/bin/{{.BINARY_NAME}}"
+
+  run:
+    desc: Run the binary with default options
+    deps: [build]
+    cmds:
+      - ./target/release/{{.BINARY_NAME}}
+
+  help:
+    desc: Show help for the binary
+    deps: [build]
+    cmds:
+      - ./target/release/{{.BINARY_NAME}} --help

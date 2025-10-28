@@ -6,7 +6,7 @@
 use crate::error::{Error, Result};
 use crate::output::{OutputFormat, Verbosity};
 use clap::{CommandFactory, Parser};
-use clap_complete::{generate, Shell};
+use clap_complete::{Shell, generate};
 use std::io;
 use std::path::PathBuf;
 
