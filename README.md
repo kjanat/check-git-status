@@ -104,6 +104,62 @@ check-git-status --generate-completion fish > ~/.config/fish/completions/check-g
 
 Uses parallel processing via Rayon for checking multiple repositories concurrently, making it significantly faster than sequential approaches on multi-core systems.
 
+## Development
+
+### Pre-commit Hooks
+
+This project includes a comprehensive pre-commit hook that runs quality checks before allowing commits. The hook automatically runs:
+
+1. **Format Check** (`cargo fmt --check`) - Ensures code formatting is consistent
+2. **Linting** (`cargo clippy`) - Catches common mistakes and style issues
+3. **Compilation** (`cargo check`) - Verifies code compiles successfully
+4. **Tests** (`cargo test`) - Runs all 36 unit and integration tests
+5. **Release Build** (`cargo build --release`) - Ensures production build works
+
+#### Installing the Hook
+
+```bash
+# Install git hooks for development
+./scripts/install-hooks.sh
+```
+
+This will copy the pre-commit hook from `scripts/pre-commit.hook` to `.git/hooks/pre-commit`.
+
+#### Bypassing the Hook
+
+In rare cases where you need to commit without running checks (not recommended):
+
+```bash
+git commit --no-verify -m "your message"
+```
+
+#### What Happens During Commit
+
+When you run `git commit`, you'll see output like:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Pre-commit Quality Checks
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+▶ Checking code formatting...
+✓ Code formatting is correct
+▶ Running clippy (linter)...
+✓ Clippy checks passed
+▶ Running cargo check...
+✓ Compilation successful
+▶ Running tests...
+✓ All tests passed (36 tests)
+▶ Building release binary...
+✓ Release build successful
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ All quality checks passed!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+If any check fails, the commit will be blocked with a helpful error message.
+
 ## Compatibility
 
 Requires:

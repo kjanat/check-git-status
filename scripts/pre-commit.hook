@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Pre-commit hook for check-git-status
+# Runs quality checks before allowing commits
+
+set -e  # Exit on first error
+
+# Color codes for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_step() {
+    echo -e "${CYAN}▶${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+echo ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  Pre-commit Quality Checks${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# Check if cargo is available
+if ! command -v cargo &> /dev/null; then
+    print_error "cargo not found. Please install Rust."
+    exit 1
+fi
+
+# 1. Format check
+print_step "Checking code formatting..."
+if cargo fmt -- --check &> /dev/null; then
+    print_success "Code formatting is correct"
+else
+    print_error "Code formatting issues found"
+    echo ""
+    print_warning "Run 'cargo fmt' to fix formatting"
+    exit 1
+fi
+
+# 2. Clippy (linting)
+print_step "Running clippy (linter)..."
+if cargo clippy --all-targets --all-features -- -D warnings 2>&1 | grep -q "warning\|error"; then
+    print_error "Clippy found issues"
+    echo ""
+    cargo clippy --all-targets --all-features -- -D warnings
+    exit 1
+else
+    print_success "Clippy checks passed"
+fi
+
+# 3. Cargo check (compilation)
+print_step "Running cargo check..."
+if cargo check --all-targets --all-features 2>&1 | grep -q "error"; then
+    print_error "Compilation errors found"
+    echo ""
+    cargo check --all-targets --all-features
+    exit 1
+else
+    print_success "Compilation successful"
+fi
+
+# 4. Run tests
+print_step "Running tests..."
+# Build first to ensure integration tests can find binary
+if ! cargo build --release &> /dev/null; then
+    print_error "Build failed before tests"
+    exit 1
+fi
+
+if cargo test 2>&1 | grep -q "test result:.*FAILED"; then
+    print_error "Tests failed"
+    echo ""
+    cargo test
+    exit 1
+else
+    # Get test count
+    test_output=$(cargo test 2>&1)
+    if echo "$test_output" | grep -q "test result: ok"; then
+        test_count=$(echo "$test_output" | grep "test result: ok" | tail -1 | awk '{print $4}')
+        print_success "All tests passed ($test_count tests)"
+    else
+        print_success "All tests passed"
+    fi
+fi
+
+# 5. Build release
+print_step "Building release binary..."
+if cargo build --release &> /dev/null; then
+    print_success "Release build successful"
+else
+    print_error "Release build failed"
+    echo ""
+    cargo build --release
+    exit 1
+fi
+
+# All checks passed
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  ✓ All quality checks passed!${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+exit 0
